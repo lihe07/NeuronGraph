@@ -1,15 +1,8 @@
-import time
-from copy import deepcopy
-
 from torch import nn
 import torch
 from icecream import ic
 from torch import optim
 from torch.autograd import Variable
-
-
-def up_dim(x: Variable) -> Variable:
-    return x.reshape(1, *x.shape)
 
 
 class NG(nn.Module):
@@ -60,9 +53,4 @@ class NG(nn.Module):
         :return:
         """
         return self.nodes_num ** 2
-
-
-def test():
-    my_graph = NG(2, 5, nodes=100)
-    loss_func = nn.MSELoss()
 
