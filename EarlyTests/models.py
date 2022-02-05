@@ -12,30 +12,20 @@ def up_dim(x: Variable) -> Variable:
     return x.reshape(1, *x.shape)
 
 
-class Node(nn.Module):
-    def __init__(self, neighbors):
-        super(Node, self).__init__()
-        self.weight = nn.Parameter(torch.rand(neighbors), requires_grad=True)
-
-    def forward(self, x: Variable) -> Variable:
-        out = torch.zeros(x.shape[1:])
-        out = Variable(out, requires_grad=True)
-        for i, data in enumerate(x):
-            out = out + data * self.weight[i]
-        return out
-
-
 class NG(nn.Module):
-    def __init__(self, nodes=10):
+    def __init__(self, in_features, out_features, nodes=10):
         """
         初始化一个神经图
         :param nodes: 节点数量
         """
         super(NG, self).__init__()
         self.nodes_num = nodes
-        self.nodes = nn.ModuleList([Node(nodes) for _ in range(nodes)])
-        self.in_node = 0
-        self.out_node = nodes - 1
+        self.nodes = nn.ModuleList([nn.Linear(nodes, 1) for _ in range(nodes)])
+        assert nodes > (in_features + out_features), ValueError("全部节点数量不能少于输入输出节点数量")
+        # 规定了输入节点的编号
+        self.in_nodes = [i for i in range(in_features)]
+        # 规定了输出节点的编号
+        self.out_nodes = [nodes - i - 1 for i in range(out_features)]
 
     def tick(self, state: Variable) -> Variable:
         """
@@ -43,11 +33,11 @@ class NG(nn.Module):
         :param state: 模型当前的状态
         :return: 模型未来的状态
         """
+        # 下一刻的状态
         next_state = Variable(torch.Tensor([]), requires_grad=True)
         for n in range(self.nodes_num):
             node = self.nodes[n]
-            out = node(state)
-            next_state = torch.cat((next_state, up_dim(out)))
+            next_state = torch.cat((next_state, node(state)))
 
         return next_state
 
@@ -57,12 +47,12 @@ class NG(nn.Module):
         :param x:
         :return:
         """
-        state = torch.zeros((self.nodes_num,) + tuple(x.shape))
+        state = torch.zeros(self.nodes_num)
         ic(state.shape)
-        state[self.in_node] = x
+        state[self.in_nodes] = x
         state = Variable(state, requires_grad=True)
         next_state = self.tick(state)
-        return next_state[self.out_node]
+        return next_state[self.out_nodes]
 
     def parameters_num(self):
         """
@@ -72,96 +62,7 @@ class NG(nn.Module):
         return self.nodes_num ** 2
 
 
-class Baseline(nn.Module):
-    def __init__(self):
-        super(Baseline, self).__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(9, 18),
-            nn.Linear(18, 18),
-            nn.Linear(18, 9)
-        )
-
-    def forward(self, x):
-        return self.layers(x.reshape(9)).reshape(3, 3)
-
-
 def test():
-    """
-    loss不变: 状态无法backward
-    :return:
-    """
-    my_graph = NG(100)
-    ic(my_graph.parameters_num())
+    my_graph = NG(2, 5, nodes=100)
     loss_func = nn.MSELoss()
-    input_ = torch.Tensor([
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1]
-    ])
-    target = torch.Tensor([
-        [1, 1, 4],
-        [5, 1, 4],
-        [19, 19, 810]
-    ])
-    target_state = torch.ones(100, 3, 3)
-    prs = [_ for _ in my_graph.parameters()]
-    ic(len(prs))
 
-    optimizer = optim.SGD(my_graph.parameters(), 0.1, momentum=0.8)
-    for i in range(10):
-        optimizer.zero_grad()
-        out = my_graph(input_)
-        loss = loss_func(out, target)
-        ic(loss)
-        loss.backward()
-        optimizer.step()
-    ic(out)
-
-
-def test_baseline():
-    model = Baseline()
-    input_ = torch.Tensor([
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1]
-    ])
-    target = torch.Tensor([
-        [1, 1, 4],
-        [5, 1, 4],
-        [19, 19, 810]
-    ])
-    loss_func = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), 0.001)
-    for i in range(10):
-        optimizer.zero_grad()
-        out = model(input_)
-        loss = loss_func(out, target)
-        ic(loss)
-        loss.backward()
-        optimizer.step()
-
-
-def test_node():
-    """
-    Test Passed
-    """
-    model = Node(3)
-    input_ = torch.Tensor([
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1]
-    ])
-    target = torch.Tensor([1, 1, 4])
-    loss_func = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), 0.1)
-    for i in range(10):
-        optimizer.zero_grad()
-        out = model(input_)
-        loss = loss_func(out, target)
-        ic(loss)
-        loss.backward()
-        optimizer.step()
-
-
-if __name__ == '__main__':
-    test()
