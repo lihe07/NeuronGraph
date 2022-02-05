@@ -81,6 +81,9 @@ def train(model):
 
 if __name__ == '__main__':
     my_model = MnistNG()
+    my_model.ng.init()
+    print(my_model.ng.get_adjacency_matrix())
+    exit()
     try:
         train(my_model)
     except KeyboardInterrupt:

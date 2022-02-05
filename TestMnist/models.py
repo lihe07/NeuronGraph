@@ -20,7 +20,8 @@ class NG(nn.Module):
         """
         super(NG, self).__init__()
         self.nodes_num = nodes
-        self.nodes = nn.ModuleList([nn.Linear(nodes, 1) for _ in range(nodes)])
+        # 每一个节点接受邻居(n-1个)的输入
+        self.nodes = nn.ModuleList([nn.Linear(nodes - 1, 1) for _ in range(nodes)])
         assert nodes > (in_features + out_features), ValueError("全部节点数量不能少于输入输出节点数量")
         # 规定了输入节点的编号
         self.in_nodes = [i for i in range(in_features)]
@@ -37,7 +38,11 @@ class NG(nn.Module):
         next_state = Variable(torch.Tensor([]), requires_grad=True)
         for n in range(self.nodes_num):
             node = self.nodes[n]
-            next_state = torch.cat((next_state, node(state)))
+            # 当前节点的输入
+            inputs = [state[i] for i in range(self.nodes_num) if i != n]
+            # 当前节点的输出
+            output = node(torch.cat(inputs))
+            next_state = torch.cat((next_state, output))
 
         return next_state
 
@@ -63,6 +68,53 @@ class NG(nn.Module):
         :return:
         """
         return self.nodes_num ** 2
+
+    def get_adjacency_matrix(self):
+        """
+        获取模型的邻接矩阵
+        :return:
+        """
+        adjacency_matrix = torch.zeros(self.nodes_num, self.nodes_num)
+        for i, node in enumerate(self.nodes):
+            params = [_ for _ in node.parameters()][0]
+            # 参数为 邻居节点到当前节点的强弱
+
+            for j in range(self.nodes_num):
+                # 遍历邻居节点
+                if i == j:
+                    adjacency_matrix[i][j] = 0  # 自身节点的权重为0
+                elif j < i:
+                    adjacency_matrix[j][i] = params[0][j]
+                else:
+                    adjacency_matrix[j][i] = params[0][j - 1]
+
+        return adjacency_matrix
+
+    def load_adjacency_matrix(self, adjacency_matrix):
+        """
+        从邻接矩阵导入模型参数
+        :param adjacency_matrix:
+        :return:
+        """
+        for i, node in enumerate(self.nodes):
+            weight = torch.zeros(self.nodes_num - 1)
+
+            # 邻居节点到当前节点的强弱
+            for j in range(self.nodes_num):
+                if j == i:
+                    continue
+                elif j < i:
+                    weight[j] = adjacency_matrix[j][i]
+                else:
+                    weight[j - 1] = adjacency_matrix[j][i]
+            node.weight = nn.Parameter(up_dim(weight))
+
+    def init(self):
+        """
+        初始化连接强度（切断全部连接）
+        :return:
+        """
+        self.load_adjacency_matrix(torch.zeros(self.nodes_num, self.nodes_num))
 
 
 class LeNet(nn.Module):
@@ -112,8 +164,8 @@ class MnistNG(nn.Module):
 
     def __init__(self):
         super(MnistNG, self).__init__()
-        self.down_sample = nn.Conv2d(1, 1, (5, 5), stride=(3, 3)) # [Bx28x28] -> [Bx8x8]
-        self.ng = NG(8*8, 10, nodes=100)
+        self.down_sample = nn.Conv2d(1, 1, (5, 5), stride=(3, 3))  # [Bx28x28] -> [Bx8x8]
+        self.ng = NG(8 * 8, 10, nodes=100)
 
     def forward(self, x):
         x = x.reshape(x.size(0), 1, 28, 28)
